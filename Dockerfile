@@ -1,7 +1,6 @@
-FROM ollama/ollama:latest
+FROM searxng/searxng:latest
 
-# Expose the default Ollama port
-EXPOSE 11434
+# Expose the default SearXNG port
+EXPOSE 8080
 
-# Set the default command to run Ollama server
-CMD ["serve"]
+# SearXNG starts with the CMD defined in the base image

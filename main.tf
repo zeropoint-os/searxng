@@ -4,12 +4,16 @@ terraform {
       source  = "kreuzwerker/docker"
       version = "~> 3.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
 }
 
 variable "zp_module_id" {
   type        = string
-  default     = "ollama"
+  default     = "searxng"
   description = "Unique identifier for this module instance (user-defined, freeform)"
 }
 
@@ -24,19 +28,77 @@ variable "zp_arch" {
   description = "Target architecture - amd64, arm64, etc. (injected by zeropoint)"
 }
 
-variable "zp_gpu_vendor" {
-  type        = string
-  default     = ""
-  description = "GPU vendor - nvidia, amd, intel, or empty for no GPU (injected by zeropoint)"
-}
-
 variable "zp_module_storage" {
   type        = string
   description = "Host path for persistent storage (injected by zeropoint)"
 }
 
-# Build Ollama image from local Dockerfile
-resource "docker_image" "ollama" {
+variable "instance_name" {
+  type        = string
+  default     = "Zeropoint Search"
+  description = "SearXNG instance name displayed in the UI"
+}
+
+variable "safe_search" {
+  type        = number
+  default     = 0
+  description = "Safe search level: 0 (off), 1 (moderate), 2 (strict)"
+  
+  validation {
+    condition     = contains([0, 1, 2], var.safe_search)
+    error_message = "safe_search must be 0, 1, or 2."
+  }
+}
+
+variable "request_timeout" {
+  type        = number
+  default     = 2.0
+  description = "Request timeout in seconds for outgoing requests"
+}
+
+variable "autocomplete" {
+  type        = string
+  default     = "duckduckgo"
+  description = "Autocomplete engine: duckduckgo, google, bing, or empty for disabled"
+}
+
+variable "enable_bot_detection" {
+  type        = bool
+  default     = false
+  description = "Enable/disable bot detection (usually disabled for internal use)"
+}
+
+variable "enabled_engines" {
+  type        = list(string)
+  default     = ["google", "duckduckgo", "wikipedia", "bing", "startpage", "qwant", "arch linux wiki", "github", "stackoverflow", "arxiv"]
+  description = "List of search engines to enable by default"
+}
+
+# Create storage directories for persistent data and config
+resource "null_resource" "create_storage_dir" {
+  provisioner "local-exec" {
+    command = "mkdir -p ${var.zp_module_storage}/searxng-config ${var.zp_module_storage}/searxng"
+  }
+}
+
+# Generate SearXNG settings.yml from Terraform variables
+resource "local_file" "searxng_settings" {
+  filename = "${var.zp_module_storage}/searxng-config/settings.yml"
+  
+  content = templatefile("${path.module}/settings.tpl", {
+    instance_name        = var.instance_name
+    safe_search          = var.safe_search
+    autocomplete         = var.autocomplete
+    request_timeout      = var.request_timeout
+    enable_bot_detection = var.enable_bot_detection
+    enabled_engines      = var.enabled_engines
+  })
+  
+  depends_on = [null_resource.create_storage_dir]
+}
+
+# Build SearXNG image from local Dockerfile
+resource "docker_image" "searxng" {
   name = "${var.zp_module_id}:latest"
   build {
     context    = path.module
@@ -46,10 +108,10 @@ resource "docker_image" "ollama" {
   keep_locally = true
 }
 
-# Main Ollama container (no host port binding)
-resource "docker_container" "ollama_main" {
+# Main SearXNG container (no host port binding)
+resource "docker_container" "searxng_main" {
   name  = "${var.zp_module_id}-main"
-  image = docker_image.ollama.image_id
+  image = docker_image.searxng.image_id
 
   # Network configuration (provided by zeropoint)
   networks_advanced {
@@ -59,47 +121,59 @@ resource "docker_container" "ollama_main" {
   # Restart policy
   restart = "unless-stopped"
 
-  # GPU access (conditional based on vendor)
-  runtime = var.zp_gpu_vendor == "nvidia" ? "nvidia" : null
-  gpus    = var.zp_gpu_vendor != "" ? "all" : null
-
   # Environment variables
   env = [
-    "OLLAMA_HOST=0.0.0.0",
+    "INSTANCE_NAME=${var.instance_name}",
+    "SEARXNG_BIND_ADDRESS=0.0.0.0",
+    "SEARXNG_PORT=8080",
   ]
 
-  # Persistent storage
+  # SearXNG configuration (generated from template)
   volumes {
-    host_path      = "${var.zp_module_storage}/.ollama"
-    container_path = "/root/.ollama"
+    host_path      = local_file.searxng_settings.filename
+    container_path = "/etc/searxng/settings.yml"
+  }
+
+  # Persistent storage for search cache and other data
+  volumes {
+    host_path      = "${var.zp_module_storage}/searxng"
+    container_path = "/var/lib/searxng"
   }
 
   # Ports exposed internally (no host binding)
-  # Port 11434 is accessible via service discovery (DNS)
+  # Port 8080 is accessible via service discovery (DNS)
+  
+  depends_on = [local_file.searxng_settings]
 }
 
 # Outputs for zeropoint (container resource only)
 output "main" {
-  value       = docker_container.ollama_main
-  description = "Main Ollama container"
+  value       = docker_container.searxng_main
+  description = "Main SearXNG container"
 }
 
 # Service ports for external access (defined but not bound to host)
 output "main_ports" {
   value = {
     api = {
-      port        = 11434                   # Ollama API port
+      port        = 8080                    # SearXNG API port
       protocol    = "http"                  # The protocol used
       transport   = "tcp"                   # Transport layer
-      description = "Ollama API endpoint"   # Description of the port
+      description = "SearXNG API endpoint"  # Description of the port
       default     = true                    # Default port for the service
     }
   }
   description = "Service ports for external access"
 }
 
-# Ollama API URL for easy consumption by other modules
-output "ollama_api_url" {
-  value       = "http://${docker_container.ollama_main.name}:11434"
-  description = "Ollama API URL accessible via Docker network"
+# SearXNG base URL for easy consumption by other modules
+output "searxng_base_url" {
+  value       = "http://${docker_container.searxng_main.name}:8080"
+  description = "SearXNG base URL accessible via Docker network"
+}
+
+# SearXNG query URL for OpenWebUI RAG web search integration
+output "searxng_query_url" {
+  value       = "http://${docker_container.searxng_main.name}:8080/search?q=<query>"
+  description = "SearXNG query URL for web search integration"
 }

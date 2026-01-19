@@ -27,4 +27,5 @@ Thumbs.db
 *.swo
 *~
 
+# Local runtime data (managed by zeropoint in production)
 data/**
