@@ -28,6 +28,12 @@ variable "zp_arch" {
   description = "Target architecture - amd64, arm64, etc. (injected by zeropoint)"
 }
 
+variable "zp_gpu_vendor" {
+  type        = string
+  default     = ""
+  description = "GPU vendor (not used by SearXNG, kept for compatibility)"
+}
+
 variable "zp_module_storage" {
   type        = string
   description = "Host path for persistent storage (injected by zeropoint)"
