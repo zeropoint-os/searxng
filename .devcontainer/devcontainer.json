@@ -1,5 +1,5 @@
 {
-	"name": "ollama",
+	"name": "searxng",
 	"build": {
 		"dockerfile": "dev.Dockerfile",
 		"context": ".."

@@ -49,11 +49,6 @@ variable "safe_search" {
   type        = number
   default     = 0
   description = "Safe search level: 0 (off), 1 (moderate), 2 (strict)"
-  
-  validation {
-    condition     = contains([0, 1, 2], var.safe_search)
-    error_message = "safe_search must be 0, 1, or 2."
-  }
 }
 
 variable "request_timeout" {
