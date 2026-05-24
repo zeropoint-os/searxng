@@ -16,7 +16,7 @@ SearXNG is a privacy-respecting metasearch engine that aggregates results from m
 
 - **Docker Image**: Official SearXNG image with local build
 - **Settings**: Generated from Terraform vars at runtime (not baked into image)
-- **Storage**: Persistent cache at `${zp_module_storage}/searxng`
+- **Storage**: Persistent cache at `${zp_storage_dir}/searxng`
 - **Network**: Docker bridge network with internal DNS discovery
 - **Port**: 8080 (accessible from other containers)
 
@@ -43,7 +43,7 @@ docker network create zpm-test-nw
 
 # Apply Terraform
 terraform apply -var='zp_network_name=zpm-test-nw' \
-  -var='zp_module_storage='$(pwd)'/data' -auto-approve
+  -var='zp_storage_dir='$(pwd)'/data' -auto-approve
 
 # Test search
 curl 'http://172.19.0.2:8080/search?q=kubernetes&format=json'
@@ -59,7 +59,8 @@ curl 'http://172.19.0.2:8080/search?q=kubernetes&format=json'
 | `zp_module_id` | string | `"searxng"` | Module instance identifier |
 | `zp_network_name` | string | (required) | Docker network name (injected by zeropoint) |
 | `zp_arch` | string | `"amd64"` | Target architecture: amd64, arm64, etc. (injected by zeropoint) |
-| `zp_module_storage` | string | (required) | Host path for persistent storage (injected by zeropoint) |
+| `zp_module_dir` | string | (required) | Agent's working directory for this module — terraform state + cloned source (injected by zeropoint) |
+| `zp_storage_dir` | string | (required) | Isolated data root for this module — all bind mounts must live under here (injected by zeropoint) |
 | `instance_name` | string | `"Zeropoint Search"` | Name displayed in SearXNG UI |
 | `safe_search` | number | `0` | Safe search level: 0 (off), 1 (moderate), 2 (strict) |
 | `autocomplete` | string | `"duckduckgo"` | Autocomplete engine: `duckduckgo`, `google`, `bing`, or empty to disable |
@@ -84,7 +85,7 @@ Settings are **generated at runtime** from `settings.tpl` using Terraform `templ
 
 ```hcl
 resource "local_file" "searxng_settings" {
-  filename = "${var.zp_module_storage}/searxng-config/settings.yml"
+  filename = "${var.zp_storage_dir}/searxng-config/settings.yml"
   content = templatefile("${path.module}/settings.tpl", {
     instance_name        = var.instance_name
     safe_search          = var.safe_search
@@ -186,8 +187,8 @@ Checks:
 
 ## Storage
 
-- **Config**: `${zp_module_storage}/searxng-config/` - Generated settings.yml
-- **Cache**: `${zp_module_storage}/searxng/` - Search results cache and persistent data
+- **Config**: `${zp_storage_dir}/searxng-config/` - Generated settings.yml
+- **Cache**: `${zp_storage_dir}/searxng/` - Search results cache and persistent data
 
 ## Customization Examples
 
@@ -196,7 +197,7 @@ Checks:
 ```bash
 terraform apply \
   -var='safe_search=2' \
-  -var='zp_module_storage=./data'
+  -var='zp_storage_dir=./data'
 ```
 
 ### Custom Instance Name
@@ -204,7 +205,7 @@ terraform apply \
 ```bash
 terraform apply \
   -var='instance_name=My Company Search' \
-  -var='zp_module_storage=./data'
+  -var='zp_storage_dir=./data'
 ```
 
 ### Specific Engines Only
@@ -212,7 +213,7 @@ terraform apply \
 ```bash
 terraform apply \
   -var='enabled_engines=["google","duckduckgo","wikipedia"]' \
-  -var='zp_module_storage=./data'
+  -var='zp_storage_dir=./data'
 ```
 
 ## Troubleshooting

@@ -34,9 +34,14 @@ variable "zp_gpu_vendor" {
   description = "GPU vendor (not used by SearXNG, kept for compatibility)"
 }
 
-variable "zp_module_storage" {
+variable "zp_module_dir" {
   type        = string
-  description = "Host path for persistent storage (injected by zeropoint)"
+  description = "Agent's working directory for this module (injected by zeropoint). Terraform state and the cloned source live here. Users may edit this — the agent moves the directory atomically."
+}
+
+variable "zp_storage_dir" {
+  type        = string
+  description = "Isolated data root for this module (injected by zeropoint). All bind mounts MUST be under this path so the agent can move user data when zp_storage_dir is edited (atomic same-fs, rsync-and-swap cross-fs)."
 }
 
 variable "instance_name" {
@@ -78,13 +83,13 @@ variable "enabled_engines" {
 # Create storage directories for persistent data and config
 resource "null_resource" "create_storage_dir" {
   provisioner "local-exec" {
-    command = "mkdir -p ${var.zp_module_storage}/searxng-config ${var.zp_module_storage}/searxng"
+    command = "mkdir -p ${var.zp_storage_dir}/searxng-config ${var.zp_storage_dir}/searxng"
   }
 }
 
 # Generate SearXNG settings.yml from Terraform variables
 resource "local_file" "searxng_settings" {
-  filename = "${var.zp_module_storage}/searxng-config/settings.yml"
+  filename = "${var.zp_storage_dir}/searxng-config/settings.yml"
   
   content = templatefile("${path.module}/settings.tpl", {
     instance_name        = var.instance_name
@@ -137,7 +142,7 @@ resource "docker_container" "searxng_main" {
 
   # Persistent storage for search cache and other data
   volumes {
-    host_path      = "${var.zp_module_storage}/searxng"
+    host_path      = "${var.zp_storage_dir}/searxng"
     container_path = "/var/lib/searxng"
   }
 
